@@ -1,0 +1,163 @@
+---
+title: "NYPD Shooting Incident"
+author: "CK"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+## Introduction
+
+This data originates from the official US government Data.gov site and the data regroup list  of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year. We have a lot of informations such as the location and times, the date and we also have information about the victims, and perpetrators.
+
+In this analysis, we will try to understand which part of the journey is the more dangerous in New York between :
+
+* **Morning** : between 4:01 and 12:00
+* **Afternoon** : between 12:01 and 17:00
+* **Evening** : between 17:01 and 20:00
+* **Night** : between 20:01 and 4:00
+
+We will deepdive on the data by looking at attributes like Victims races and Victims ages.
+
+## 1. Libraries
+```{r setup_library}
+library("tidyverse")
+```
+
+## 2. Import the Data
+```{r NYPD_df}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+NYPD_df <- read_csv(url)
+```
+
+```{r look at data}
+#Let's take a look at the data
+summary(NYPD_df)
+```
+
+## 3. Tidy and Transform the Data
+
+#### a. Delete columns
+First, we are going to only keep the columns needed for the analysis : OCCUR_DATE, OCCUR_TIME, BORO, VIC_RACE and VIC_AGE_GROUP
+```{r delete_columns}
+#select only the columns we want to keep
+NYPD_df <- NYPD_df %>%
+select(c(OCCUR_DATE, OCCUR_TIME, BORO, VIC_RACE, VIC_AGE_GROUP))
+```
+
+#### b. Change date format
+We also have bad date formatting and NA value. For this analysis, we can keep the "NA" value but we need to change the date format from "chr" to date.
+```{r date_format_columns}
+#select only the columns we want to keep
+NYPD_df <- NYPD_df %>%
+mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+```
+
+#### c. Check for missing value rows
+select only the columns we want to keep
+```{r check_missing_values}
+#Checkformissingvalues
+colSums(is.na(NYPD_df)|NYPD_df=="")
+```
+No missing values, great ! But we have UNKNOWN value and false data on the VIC_AGE_GROUP columns. Let's get rid of it :
+```{r delete_false_values}
+# Remove rows with VIC_AGE_GROUP as "UNKNOWN" or "1022"
+NYPD_df <- NYPD_df %>%
+  filter(VIC_AGE_GROUP != "UNKNOWN" & VIC_AGE_GROUP != "1022")
+```
+
+#### d. Create the TIMES_OF_DAY columns
+We will create the "TIMES_OF_DAY" with 4 variables Morning, Afternoon, Evening and Night and then we will delete the OCCUR_TIME because it will no longer be needed for the analysis.
+```{r create_TIMES_OF_DAY}
+#creating TIMES_OF_DAY columns
+NYPD_df <- NYPD_df %>%
+mutate(TIMES_OF_DAY = case_when(
+  OCCUR_TIME >= hms("04:01:00") & OCCUR_TIME <= hms("12:00:00") ~ "Morning",
+  OCCUR_TIME > hms("12:00:00") & OCCUR_TIME <= hms("17:00:00") ~ "Afternoon",
+  OCCUR_TIME > hms("17:00:00") & OCCUR_TIME <= hms("20:00:00") ~ "Evening",
+  TRUE ~ "Night"))
+```
+
+```{r Delete_OCCUR_TIME}
+#Deleting OCCUR_TIME columns
+NYPD_df <- NYPD_df %>%
+select(c(OCCUR_DATE, BORO, VIC_RACE, VIC_AGE_GROUP, TIMES_OF_DAY))
+```
+
+## 4. Add Visualizations and Analysis
+First, We will visualize the data using bar plot
+```{r bar_plot1}
+# Create a bar plot about Distribution of Victim Races across Boroughs
+NYPD_df %>%
+  ggplot(aes(x = BORO, fill = VIC_RACE)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Distribution of Victim Races across Boroughs",
+       x = "Borough",
+       y = "Count",
+       fill = "Victim Race")
+```
+Now, we will see the evolution of cases over the time where black people are the victims
+
+```{r bar_plot2}
+#Create a bar plot about Distribution of Occurrences by Time of Day
+ggplot(NYPD_df, aes(x = VIC_AGE_GROUP, fill = VIC_AGE_GROUP)) +
+  geom_bar() +
+  labs(title = "Distribution of Occurrences by Victims ages",
+       x = "Victims ages",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Modeling
+We are going to model the data arround the variable "TIMES_OF_DAY" we created earlier. First let's see what is the repartition of cases according to the time of the day
+
+```{r bar plot}
+# Create a bar plot for distribution of occurrences by TIMES_OF_DAY
+ggplot(NYPD_df, aes(x = TIMES_OF_DAY, fill = TIMES_OF_DAY)) +
+  geom_bar() +
+  labs(title = "Distribution of Occurrences by Time of Day",
+       x = "Time of Day",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+```
+We can see that night period of time is where we the most shooting report occurs. Let's see if it is the case in all borough
+
+```{r clusters_bar_plot}
+# Load the necessary packages
+
+# Create a clustered bar plot for each borough
+ggplot(NYPD_df, aes(x = TIMES_OF_DAY, fill = BORO)) +
+  geom_bar() +
+  labs(title = "Occurrences by Times of Day and Borough",
+       x = "Time of Day",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "top") +
+  facet_wrap(~ BORO, scales = "free_x", ncol = 2)  # Facet by BORO
+```
+As we can see, what ever the night remains the time period with the most shootings reports.
+Let's see the total reparation of reports according by the victim races.
+```{r reparation_of_reports}
+# Create a pie chart for the distribution of VIC_RACE
+pie_chart <- ggplot(NYPD_df, aes(x = "", fill = VIC_RACE)) +
+  geom_bar(width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Distribution of Victim Races",
+       fill = "Victim Race",
+       x = NULL,
+       y = NULL) +
+  theme_void()
+print(pie_chart)
+```
+
+# Conclusion and Bias
+
+According to the data, we can see that black people are more likely to be victims of shootings at night than all the other races what ever borough of New York city. 
+
+Bias : It's no surprise that most crimes take place at night, as most people work during the day. As an african living in France, and looking at the media countains about shootings in the US I was expecting this result. We can also think that most victims are people under 65 years old because there are fewer retirees in cities than working people. I think the data is also biased because the term "black", for example, covers a wide range of people, including African Americans, Africans and black tourists.
+
+
+  
+  
+  
+  
+  
